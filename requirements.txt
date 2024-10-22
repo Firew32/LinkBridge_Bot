@@ -1,4 +1,5 @@
-python-telegram-bot==20.3
-SQLAlchemy==2.0.20
-psycopg2-binary==2.9.7  # PostgreSQL adapter for Python
-python-dotenv==1.0.0    # For managing environment variables
+Flask==2.3.2
+python-dotenv==1.0.0
+SQLAlchemy==2.0.18
+psycopg2-binary==2.9.6   # Postgres database adapter
+telegram==0.0.1           # or python-telegram-bot==20.3
