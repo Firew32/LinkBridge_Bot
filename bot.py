@@ -101,9 +101,12 @@ async def error_handler(update: object, context: CallbackContext) -> None:
     logger.error("Exception while handling an update:", exc_info=context.error)
 
 # Define a root route
-@app.route('/', methods=['GET'])
-def home():
-    return "Welcome to the LinkedIn Profile Bot! Use /set_webhook to set up the webhook.", 200
+@app.route('/set_webhook', methods=['GET', 'POST'])
+def set_webhook():
+    webhook_url = f"https://linkbridge-bot.onrender.com/{TELEGRAM_BOT_TOKEN}"
+    application.bot.set_webhook(webhook_url)
+    return "Webhook set successfully", 200
+
 
 # Initialize the Telegram application
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
