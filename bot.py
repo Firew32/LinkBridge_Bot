@@ -100,6 +100,18 @@ async def notify_users_of_new_profile(context: CallbackContext, linkedin_url: st
 async def error_handler(update: object, context: CallbackContext) -> None:
     logger.error("Exception while handling an update:", exc_info=context.error)
 
+# Define a root route
+@app.route('/')
+def index():
+    return "Telegram Bot is running!", 200
+
+# Define the route to set the webhook
+@app.route('/set_webhook', methods=['GET', 'POST'])
+def set_webhook():
+    webhook_url = f"https://your-server-domain.com/{TELEGRAM_BOT_TOKEN}"
+    application.bot.set_webhook(webhook_url)
+    return "Webhook set successfully", 200
+
 # Initialize the Telegram application
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -115,13 +127,6 @@ def webhook():
     application.update_queue.put_nowait(update)
     return "OK", 200
 
-# Function to set the webhook
-@app.route('/set_webhook', methods=['GET', 'POST'])
-def set_webhook():
-    webhook_url = f"https://linkbridge-bot.onrender.com/{TELEGRAM_BOT_TOKEN}"
-    application.bot.set_webhook(webhook_url)
-    return "Webhook set successfully", 200
-
 # Main function to run the Flask app
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)))  # Ensure it runs on the correct port
+    app.run(host='0.0.0.0', port=5000)
