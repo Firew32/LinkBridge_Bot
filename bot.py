@@ -118,7 +118,7 @@ def webhook():
 # Function to set the webhook (optional)
 @app.route('/set_webhook', methods=['GET', 'POST'])
 def set_webhook():
-    webhook_url = f"https://your-server-domain.com/{TELEGRAM_BOT_TOKEN}"
+    webhook_url = f"https://your-server-domain.com/{TELEGRAM_BOT_TOKEN}"  # Update with your server's URL
     application.bot.set_webhook(webhook_url)
     return "Webhook set successfully", 200
 

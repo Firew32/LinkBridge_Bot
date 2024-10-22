@@ -2,5 +2,5 @@ Flask==2.3.2
 python-dotenv==1.0.0
 SQLAlchemy==2.0.18
 psycopg2-binary==2.9.6   # Postgres database adapter
-python-telegram-bot==13.15        # or python-telegram-bot==20.3
+python-telegram-bot       # or python-telegram-bot==20.3
 gunicorn
