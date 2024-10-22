@@ -1,3 +1,4 @@
+from fastapi import FastAPI, Request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 import logging
@@ -5,7 +6,6 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, insert, select, Table, MetaData
 from sqlalchemy.exc import IntegrityError
-
 
 # Load environment variables
 load_dotenv()
@@ -26,15 +26,21 @@ engine = create_engine(DATABASE_URL)
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Create the ASGI app
+app = FastAPI()
+
+# Define Telegram bot application
+application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+
 # Define handlers
-async def start(update: Update, context) -> None:
+async def start(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text("Welcome! Send me your LinkedIn profile link.")
 
 async def handle_message(update: Update, context: CallbackContext) -> None:
     user_message = update.message.text
     if "linkedin.com" in user_message:  # Basic validation for LinkedIn URLs
         try:
-            # Insert LinkedIn URL into the database with transaction handling
+            # Insert LinkedIn URL into the database
             with engine.begin() as conn:
                 meta = MetaData()
                 linkedin_table = Table('user_linkedin', meta, autoload_with=engine)
@@ -48,7 +54,7 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
             with engine.connect() as conn:
                 stmt = select(linkedin_table.c.linkedin_url).where(linkedin_table.c.linkedin_url != user_message)
                 result = conn.execute(stmt)
-                linkedin_list = [row[0] for row in result]  # Access the first column of each row
+                linkedin_list = [row[0] for row in result]
 
             # Send the list of other LinkedIn profiles
             if linkedin_list:
@@ -57,16 +63,15 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
             else:
                 await update.message.reply_text("You are the first one to register!")
 
-        # Handle duplicate LinkedIn URLs
         except IntegrityError as e:
             if "duplicate key value violates unique constraint" in str(e.orig):
                 await update.message.reply_text("Your LinkedIn profile is already saved.")
-
+                
                 # Fetch and send the list of other LinkedIn profiles
                 with engine.connect() as conn:
                     stmt = select(linkedin_table.c.linkedin_url).where(linkedin_table.c.linkedin_url != user_message)
                     result = conn.execute(stmt)
-                    linkedin_list = [row[0] for row in result]  # Access the first column of each row
+                    linkedin_list = [row[0] for row in result]
 
                 if linkedin_list:
                     linkedin_str = "\n".join(linkedin_list)
@@ -75,28 +80,26 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
                     await update.message.reply_text("You are the first one to register!")
             else:
                 await update.message.reply_text(f"Error saving your profile: {e}")
-                print(f"Database Error: {e}")
+                logger.error(f"Database Error: {e}")
     else:
         await update.message.reply_text("Please send a valid LinkedIn URL.")
-
 
 # Error handling
 async def error_handler(update: object, context: object) -> None:
     logger.error("Exception while handling an update:", exc_info=context.error)
 
-def main():
-    # Create the Application and pass your bot's token
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+# Register command and message handlers
+application.add_handler(CommandHandler("start", start))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+application.add_error_handler(error_handler)
 
-    # Register command and message handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+# Define the webhook endpoint
+@app.post("/webhook")
+async def webhook(request: Request):
+    update = Update.de_json(await request.json(), application.bot)
+    await application.process_update(update)
 
-    # Register the error handler
-    application.add_error_handler(error_handler)
-
-    # Start the Bot
-    application.run_polling()
-
+# Start the bot
 if __name__ == '__main__':
-    main()
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)  # Run the ASGI server
