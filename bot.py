@@ -1,3 +1,4 @@
+from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 import logging
@@ -39,6 +40,9 @@ linkedin_table = Table(
     Column('linkedin_url', String, unique=True, nullable=False),
     Column('telegram_user_id', Integer, nullable=False)
 )
+
+# Initialize Flask app
+app = Flask(__name__)
 
 # Define handlers
 async def start(update: Update, context: CallbackContext) -> None:
@@ -96,12 +100,28 @@ async def notify_users_of_new_profile(context: CallbackContext, linkedin_url: st
 async def error_handler(update: object, context: CallbackContext) -> None:
     logger.error("Exception while handling an update:", exc_info=context.error)
 
-def main():
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_error_handler(error_handler)
-    application.run_polling()
+# Initialize the Telegram application
+application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
+# Add handlers
+application.add_handler(CommandHandler("start", start))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+application.add_error_handler(error_handler)
+
+# Define the Flask route for Telegram webhook
+@app.route(f'/{TELEGRAM_BOT_TOKEN}', methods=['POST'])
+def webhook():
+    update = Update.de_json(request.get_json(), application.bot)
+    application.update_queue.put_nowait(update)
+    return "OK", 200
+
+# Function to set the webhook (optional)
+@app.route('/set_webhook', methods=['GET', 'POST'])
+def set_webhook():
+    webhook_url = f"https://your-server-domain.com/{TELEGRAM_BOT_TOKEN}"
+    application.bot.set_webhook(webhook_url)
+    return "Webhook set successfully", 200
+
+# Main function to run the Flask app
 if __name__ == '__main__':
-    main()
+    app.run(host='0.0.0.0', port=5000)
