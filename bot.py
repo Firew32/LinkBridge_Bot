@@ -29,10 +29,14 @@ logger = logging.getLogger(__name__)
 # Create the ASGI app
 app = FastAPI()
 
+@app.get("/")  # Define the root endpoint
+async def read_root():
+    return {"message": "Welcome to the Telegram Bot API!"}
+
 # Define Telegram bot application
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-# Define handlers
+# Define command and message handlers
 async def start(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text("Welcome! Send me your LinkedIn profile link.")
 
@@ -47,42 +51,32 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
                 insert_statement = insert(linkedin_table).values(linkedin_url=user_message)
                 conn.execute(insert_statement)
 
-            # Send confirmation message
             await update.message.reply_text("Thank you! Your LinkedIn profile has been saved.")
-
-            # Fetch all LinkedIn profiles except the newly added one
-            with engine.connect() as conn:
-                stmt = select(linkedin_table.c.linkedin_url).where(linkedin_table.c.linkedin_url != user_message)
-                result = conn.execute(stmt)
-                linkedin_list = [row[0] for row in result]
-
-            # Send the list of other LinkedIn profiles
-            if linkedin_list:
-                linkedin_str = "\n".join(linkedin_list)
-                await update.message.reply_text(f"Here are the LinkedIn profiles of others:\n{linkedin_str}")
-            else:
-                await update.message.reply_text("You are the first one to register!")
+            await send_linkedin_profiles(update, user_message)
 
         except IntegrityError as e:
             if "duplicate key value violates unique constraint" in str(e.orig):
                 await update.message.reply_text("Your LinkedIn profile is already saved.")
-                
-                # Fetch and send the list of other LinkedIn profiles
-                with engine.connect() as conn:
-                    stmt = select(linkedin_table.c.linkedin_url).where(linkedin_table.c.linkedin_url != user_message)
-                    result = conn.execute(stmt)
-                    linkedin_list = [row[0] for row in result]
-
-                if linkedin_list:
-                    linkedin_str = "\n".join(linkedin_list)
-                    await update.message.reply_text(f"Here are the LinkedIn profiles of others:\n{linkedin_str}")
-                else:
-                    await update.message.reply_text("You are the first one to register!")
+                await send_linkedin_profiles(update, user_message)
             else:
                 await update.message.reply_text(f"Error saving your profile: {e}")
                 logger.error(f"Database Error: {e}")
     else:
         await update.message.reply_text("Please send a valid LinkedIn URL.")
+
+async def send_linkedin_profiles(update: Update, user_message: str) -> None:
+    with engine.connect() as conn:
+        meta = MetaData()
+        linkedin_table = Table('user_linkedin', meta, autoload_with=engine)
+        stmt = select(linkedin_table.c.linkedin_url).where(linkedin_table.c.linkedin_url != user_message)
+        result = conn.execute(stmt)
+        linkedin_list = [row[0] for row in result]
+
+    if linkedin_list:
+        linkedin_str = "\n".join(linkedin_list)
+        await update.message.reply_text(f"Here are the LinkedIn profiles of others:\n{linkedin_str}")
+    else:
+        await update.message.reply_text("You are the first one to register!")
 
 # Error handling
 async def error_handler(update: object, context: object) -> None:
