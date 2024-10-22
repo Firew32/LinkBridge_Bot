@@ -100,6 +100,11 @@ async def notify_users_of_new_profile(context: CallbackContext, linkedin_url: st
 async def error_handler(update: object, context: CallbackContext) -> None:
     logger.error("Exception while handling an update:", exc_info=context.error)
 
+# Define a root route
+@app.route('/', methods=['GET'])
+def home():
+    return "Welcome to the LinkedIn Profile Bot! Use /set_webhook to set up the webhook.", 200
+
 # Initialize the Telegram application
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -118,7 +123,7 @@ def webhook():
 # Function to set the webhook (optional)
 @app.route('/set_webhook', methods=['GET', 'POST'])
 def set_webhook():
-    webhook_url = f"https://your-server-domain.com/{TELEGRAM_BOT_TOKEN}"  # Update with your server's URL
+    webhook_url = f"https://your-server-domain.com/{TELEGRAM_BOT_TOKEN}"
     application.bot.set_webhook(webhook_url)
     return "Webhook set successfully", 200
 
