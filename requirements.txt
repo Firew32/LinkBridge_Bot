@@ -1,6 +1,21 @@
-Flask==2.3.2
-python-dotenv==1.0.0
+# Core dependencies
+python-telegram-bot==20.3
 SQLAlchemy==2.0.18
-psycopg2-binary==2.9.6   # Postgres database adapter
-python-telegram-bot       # or python-telegram-bot==20.3
-gunicorn
+psycopg2-binary==2.9.6
+python-dotenv==1.0.0
+requests>=2.31.0
+asyncio>=3.4.3
+python-dateutil>=2.8.2
+typing>=3.7.4
+
+# LinkedIn API
+linkedin-api>=2.0.0
+
+# Logging
+python-json-logger>=2.0.7
+
+# HTTP Client
+aiohttp>=3.8.1
+
+# Remove Flask and gunicorn as they're not needed for a bot
+
