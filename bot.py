@@ -623,52 +623,18 @@ async def retry_linkedin_api(func: callable, *args, max_retries: int = 3, **kwar
 
 async def fetch_linkedin_profile(url: str) -> Dict[str, Any]:
     """Fetch profile data from LinkedIn"""
-    try:
-        if not api:
-            logger.warning("LinkedIn API not initialized, storing basic profile info")
-            # Return basic profile info without API data
-            return {
-                'linkedin_url': url,
-                'full_name': 'Profile Owner',  # Default name
-                'headline': '',
-                'location': '',
-                'current_company': '',
-                'summary': '',
-                'profile_picture_url': None
-            }
-            
-        # Extract profile ID from URL
-        profile_id = url.split('/in/')[-1].strip('/')
-        logger.info(f"Attempting to fetch profile for ID: {profile_id}")
-        
-        # Fetch profile data
-        profile_data = api.get_profile(profile_id)
-        logger.info("Successfully fetched profile data")
-        
-        # Extract profile picture URL
-        profile_picture_url = None
-        try:
-            if 'profilePicture' in profile_data:
-                picture_data = profile_data['profilePicture']
-                if 'displayImage' in picture_data:
-                    profile_picture_url = picture_data['displayImage']
-                    logger.info(f"Found profile picture: {profile_picture_url}")
-        except Exception as pic_error:
-            logger.warning(f"Could not fetch profile picture: {str(pic_error)}")
-        
-        # Return structured data
-        return {
-            'full_name': profile_data.get('firstName', '') + ' ' + profile_data.get('lastName', ''),
-            'headline': profile_data.get('headline', ''),
-            'location': profile_data.get('locationName', ''),
-            'current_company': profile_data.get('companyName', ''),
-            'summary': profile_data.get('summary', ''),
-            'profile_picture_url': profile_picture_url
-        }
-        
-    except Exception as e:
-        logger.error(f"Error fetching LinkedIn profile: {str(e)}")
-        return {}
+    logger.info("LinkedIn API disabled, storing basic profile info")
+    # Extract username from URL
+    username = url.split('/in/')[-1].strip('/')
+    return {
+        'linkedin_url': url,
+        'full_name': f'LinkedIn User ({username})',  # Use username from URL
+        'headline': '',
+        'location': '',
+        'current_company': '',
+        'summary': '',
+        'profile_picture_url': None
+    }
 
 async def test_linkedin(update: Update, context: CallbackContext) -> None:
     """Admin command to test LinkedIn API connection"""
