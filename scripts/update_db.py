@@ -1,19 +1,14 @@
-from sqlalchemy import create_engine, Table, Column, Integer, String, MetaData, BigInteger, DateTime, Text
-import os
+from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, DateTime, Text, BigInteger
 from dotenv import load_dotenv
+import os
 from datetime import datetime
 import logging
 
-# Configure logging
-logging.basicConfig(
-    filename='logs/db_setup.log',
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+# Setup logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Load environment variables
-logger.info("Loading environment variables...")
 load_dotenv()
 DB_HOST = os.getenv('DB_HOST')
 DB_PORT = os.getenv('DB_PORT')
@@ -21,28 +16,21 @@ DB_NAME = os.getenv('DB_NAME')
 DB_USER = os.getenv('DB_USER')
 DB_PASSWORD = os.getenv('DB_PASSWORD')
 
-# Validate environment variables
-if not all([DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD]):
-    logger.error("Missing required database environment variables")
-    raise ValueError("Missing required database environment variables")
-
 # Database connection string
 DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 try:
     # Initialize SQLAlchemy engine
-    logger.info("Initializing database engine...")
     engine = create_engine(DATABASE_URL)
-    
-    # Test connection
-    with engine.connect() as conn:
-        logger.info("Database connection successful")
-    
-    # Initialize metadata
     meta = MetaData()
-    
-    # Define the LinkedIn user table
-    logger.info("Creating table definition...")
+
+    # Drop existing table
+    logger.info("Dropping existing table...")
+    with engine.connect() as conn:
+        conn.execute("DROP TABLE IF EXISTS user_linkedin")
+        conn.commit()
+
+    # Create new table with profile_picture_url column
     linkedin_table = Table(
         'user_linkedin', meta,
         Column('id', Integer, primary_key=True),
@@ -57,16 +45,11 @@ try:
         Column('created_at', DateTime, default=datetime.utcnow),
         Column('updated_at', DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     )
-    
-    # Create the table in the database
-    logger.info("Creating tables in database...")
+
+    # Create the table
     meta.create_all(engine)
-    logger.info("Database tables created successfully")
-    print("✓ Database and tables created successfully!")
+    logger.info("Database table updated successfully!")
 
 except Exception as e:
-    logger.error(f"Error setting up database: {str(e)}", exc_info=True)
-    print(f"✗ Error: {str(e)}")
-    raise
-
-
+    logger.error(f"Error updating database: {str(e)}")
+    raise 

@@ -24,3 +24,5 @@ services:
         sync: false
       - key: LINKEDIN_PASSWORD
         sync: false
+      - key: ADMIN_IDS
+        sync: false

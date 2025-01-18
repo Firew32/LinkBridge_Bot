@@ -94,21 +94,21 @@ A powerful Telegram bot designed to facilitate professional networking by enabli
 
 4. **Set Environment Variables**
 
-   - Add all variables from `.env` in Render's environment variables section:
-     - `TELEGRAM_BOT_TOKEN`
-     - `DB_HOST`
-     - `DB_PORT`
-     - `DB_NAME`
-     - `DB_USER`
-     - `DB_PASSWORD`
-     - `LINKEDIN_USERNAME`
-     - `LINKEDIN_PASSWORD`
+   - Add all variables from `.env` in Render's environment variables section
+   - Make sure to use production database credentials
+   - Set proper ADMIN_IDS for admin access
 
 5. **Deploy**
    - Click "Create Worker"
    - Wait for deployment to complete
 
-> **Note**: Make sure to use a production-grade PostgreSQL database (like Render's managed PostgreSQL) instead of a local database for deployment.
+> **Important Notes:**
+>
+> - Use a production PostgreSQL database (like Render's managed PostgreSQL)
+> - Set up proper logging in Render's dashboard
+> - Monitor the application logs for any issues
+> - Configure auto-restart on failure
+> - Set up proper backup for the database
 
 ## 💡 Usage
 

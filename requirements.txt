@@ -17,5 +17,6 @@ python-json-logger>=2.0.7
 # HTTP Client
 aiohttp>=3.8.1
 
-# Remove Flask and gunicorn as they're not needed for a bot
+# Add these for better stability
+tenacity>=8.0.1  # For retries
 

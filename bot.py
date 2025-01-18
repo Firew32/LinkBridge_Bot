@@ -10,8 +10,8 @@ from datetime import datetime, timedelta
 import requests
 from io import BytesIO
 from telegram import InputFile
-from typing import Optional, Dict, Any
-from sqlalchemy.sql import func
+from typing import Optional, Dict, Any, List
+from sqlalchemy.sql import func, text
 import asyncio
 from linkedin_api import Linkedin
 import json
@@ -24,6 +24,7 @@ import csv
 import time
 import telegram.error
 import platform
+import re
 
 
 
@@ -132,9 +133,10 @@ except Exception as e:
 async def get_main_keyboard():
     """Get the main keyboard markup"""
     keyboard = [
+        [KeyboardButton("➕ Add Profile")],
         [KeyboardButton("📚 Help"), KeyboardButton("ℹ️ Status")],
         [KeyboardButton("❌ Delete Profile"), KeyboardButton("🔄 Update Profile")],
-        [KeyboardButton("👥 View Users")]  # Add new button
+        [KeyboardButton("👥 View Users")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -174,19 +176,34 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     logger.info(f"Received message from user {user_id}: {user_message}")
     
     # Handle button presses first
-    if user_message in ["📚 Help", "ℹ️ Status", "❌ Delete Profile", "🔄 Update Profile", "👥 View Users"]:
-        if user_message == "📚 Help":
-            await help_command(update, context)
-        elif user_message == "ℹ️ Status":
-            await status(update, context)
-        elif user_message == "❌ Delete Profile":
-            await delete_profile(update, context)
-        elif user_message == "🔄 Update Profile":
-            await update_profile(update, context)
-        elif user_message == "👥 View Users":
-            await show_user_list(update, context)
-        return
-    
+    if user_message in ["➕ Add Profile", "📚 Help", "ℹ️ Status", "❌ Delete Profile", "🔄 Update Profile", "👥 View Users"]:
+        try:
+            if user_message == "➕ Add Profile":
+                await update.message.reply_text(
+                    "Please send your LinkedIn profile URL.\n"
+                    "Example: https://www.linkedin.com/in/username",
+                    reply_markup=await get_main_keyboard()
+                )
+            elif user_message == "📚 Help":
+                logger.info(f"Help button pressed by user {user_id}")
+                await help_command(update, context)
+            elif user_message == "ℹ️ Status":
+                await status(update, context)
+            elif user_message == "❌ Delete Profile":
+                await delete_profile(update, context)
+            elif user_message == "🔄 Update Profile":
+                await update_profile(update, context)
+            elif user_message == "👥 View Users":
+                await show_user_list(update, context)
+            return
+        except Exception as e:
+            logger.error(f"Error handling button press '{user_message}': {str(e)}", exc_info=True)
+            await update.message.reply_text(
+                "Sorry, there was an error processing your request.",
+                reply_markup=await get_main_keyboard()
+            )
+            return
+
     # Handle delete confirmation
     if context.user_data.get('awaiting_delete_confirmation'):
         if user_message.lower() in ["yes", "✅ yes, delete my profile"]:
@@ -376,7 +393,7 @@ async def notify_users_of_new_profile(context: CallbackContext, linkedin_url: st
             result = conn.execute(stmt)
             registered_users = [row[0] for row in result]
 
-            # Create notification message with structured information
+            # Create notification message
             notification_text = (
                 "🎉 *New Connection Alert!*\n\n"
                 f"👤 *{new_profile.full_name or 'New Professional'}*\n"
@@ -390,12 +407,29 @@ async def notify_users_of_new_profile(context: CallbackContext, linkedin_url: st
             # Notify each user
             for user_id in registered_users:
                 try:
-                    await context.bot.send_message(
-                        chat_id=user_id,
-                        text=notification_text,
-                        parse_mode='Markdown',
-                        disable_web_page_preview=True
-                    )
+                    if new_profile.profile_picture_url:
+                        try:
+                            await context.bot.send_photo(
+                                chat_id=user_id,
+                                photo=new_profile.profile_picture_url,
+                                caption=notification_text,
+                                parse_mode='Markdown'
+                            )
+                        except Exception:
+                            # Fallback to text-only if photo fails
+                            await context.bot.send_message(
+                                chat_id=user_id,
+                                text=notification_text,
+                                parse_mode='Markdown',
+                                disable_web_page_preview=True
+                            )
+                    else:
+                        await context.bot.send_message(
+                            chat_id=user_id,
+                            text=notification_text,
+                            parse_mode='Markdown',
+                            disable_web_page_preview=True
+                        )
                     logger.info(f"Notified user {user_id} about new profile")
                 except Exception as e:
                     logger.error(f"Failed to notify user {user_id}: {e}")
@@ -471,51 +505,43 @@ async def delete_profile(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text("Sorry, there was an error processing your request.")
 
 async def update_profile(update: Update, context: CallbackContext) -> None:
-    """Update existing LinkedIn profile"""
+    """Update user's LinkedIn profile"""
     user_id = update.message.from_user.id
     logger.info(f"Profile update requested by user {user_id}")
     
     try:
-        # First check if user has a profile
+        # Check if user has a profile
         with engine.connect() as conn:
-            stmt = select(linkedin_table).where(linkedin_table.c.telegram_user_id == user_id)
-            result = conn.execute(stmt)
-            existing_profile = result.fetchone()
+            result = conn.execute(
+                select(linkedin_table).where(linkedin_table.c.telegram_user_id == user_id)
+            ).first()
             
-        if not existing_profile:
-            await update.message.reply_text(
-                "❌ You don't have a profile yet!\n\n"
-                "Please share your LinkedIn URL first to create a profile."
+            if not result:
+                await update.message.reply_text(
+                    "You don't have a registered profile yet.\n"
+                    "Send your LinkedIn profile URL to register."
+                )
+                return
+            
+            # Show current profile and request new URL
+            current_profile = (
+                "Your current profile:\n\n"
+                f"Name: {result.full_name or 'Not available'}\n"
+                f"Headline: {result.headline or 'Not available'}\n"
+                f"Company: {result.current_company or 'Not available'}\n"
+                f"Location: {result.location or 'Not available'}\n\n"
+                "To update your profile, send your LinkedIn URL again."
             )
-            return
             
-        # Send instruction message
-        await update.message.reply_text(
-            "🔄 *Profile Update*\n\n"
-            "Please send your LinkedIn URL to update your profile.\n"
-            "Your existing profile will be updated with new information.\n\n"
-            "Current profile URL:\n"
-            f"`{existing_profile.linkedin_url}`",
-            parse_mode='Markdown'
-        )
-        
-        # Store the update state in user_data
-        context.user_data['awaiting_update'] = True
-        
+            await update.message.reply_text(current_profile)
+            
     except Exception as e:
-        logger.error(f"Error in update_profile for user {user_id}: {str(e)}", exc_info=True)
+        logger.error(f"Error in update profile command: {str(e)}", exc_info=True)
         await update.message.reply_text(
-            "❌ Sorry, there was an error processing your request.\n"
-            "Please try again later."
+            "Sorry, there was an error processing your request."
         )
 
-ADMIN_IDS = []
-admin_ids_str = os.getenv('ADMIN_IDS', '')
-if admin_ids_str:
-    try:
-        ADMIN_IDS = [int(id.strip()) for id in admin_ids_str.split(',') if id.strip()]
-    except ValueError:
-        logger.error("Invalid ADMIN_IDS format in environment variables")
+ADMIN_IDS = [int(id_) for id_ in os.getenv('ADMIN_IDS', '').split(',') if id_]
 
 async def admin_stats(update: Update, context: CallbackContext) -> None:
     if update.message.from_user.id not in ADMIN_IDS:
@@ -526,27 +552,46 @@ async def admin_stats(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text(f"Total registered users: {total_users}")
 
 async def help_command(update: Update, context: CallbackContext) -> None:
-    user_id = update.message.from_user.id
-    logger.info(f"Help command requested by user {user_id}")
-    help_text = (
-        "📚 *Available Commands:*\n\n"
-        "🎯 *Basic Commands*\n"
-        "• /start - Start the bot and see welcome message\n"
-        "• /help - Show this help message\n"
-        "• /status - Check bot's current status\n\n"
-        "👤 *Profile Management*\n"
-        "• /delete - Remove your LinkedIn profile\n"
-        "• /update - Update your existing profile\n\n"
-        "💡 *How to Share Your Profile:*\n"
-        "Simply send your LinkedIn URL in this format:\n"
-        "`https://www.linkedin.com/in/username`\n\n"
-        "🔔 *Features:*\n"
-        "• Automatic profile information extraction\n"
-        "• Real-time notifications for new connections\n"
-        "• View other professionals' profiles\n\n"
-        "Need more help? Feel free to contact support! 💪"
-    )
-    await update.message.reply_text(help_text, parse_mode='Markdown')
+    """Show help information"""
+    try:
+        user_id = update.message.from_user.id
+        logger.info(f"Help command requested by user {user_id}")
+        
+        help_text = (
+            "🌟 *LinkedIn Profile Sharing Bot Help*\n\n"
+            "*Basic Commands:*\n"
+            "• Click '➕ Add Profile' to share your LinkedIn profile\n"
+            "• Use '👥 View Users' to see other profiles\n"
+            "• Use '🔄 Update Profile' to update your info\n"
+            "• Use '❌ Delete Profile' to remove your profile\n\n"
+            "*Additional Commands:*\n"
+            "• /start \\- Start the bot\n"
+            "• /help \\- Show this help message\n"
+            "• /status \\- Check bot status\n"
+            "• /search \\- Search profiles\n"
+            "• /stats \\- View network statistics\n\n"
+            "*Tips:*\n"
+            "• Keep your profile up to date\n"
+            "• Use professional profile pictures\n"
+            "• Fill out your LinkedIn headline\n"
+            "• Engage with other professionals\n\n"
+            "Need help? Contact @alphityy"
+        )
+        
+        logger.info("Sending help message...")
+        await update.message.reply_text(
+            help_text,
+            parse_mode='MarkdownV2',  # Use MarkdownV2 for better compatibility
+            reply_markup=await get_main_keyboard()
+        )
+        logger.info(f"Help message sent successfully to user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Error in help command: {str(e)}", exc_info=True)
+        await update.message.reply_text(
+            "Sorry, there was an error showing the help message. Please try /help again.",
+            reply_markup=await get_main_keyboard()
+        )
 
 async def retry_linkedin_api(func: callable, *args, max_retries: int = 3, **kwargs) -> Optional[Any]:
     """Retry a LinkedIn API call with exponential backoff"""
@@ -563,56 +608,45 @@ async def retry_linkedin_api(func: callable, *args, max_retries: int = 3, **kwar
             logger.warning(f"LinkedIn API call failed, retrying in {wait_time}s: {str(e)}")
             await asyncio.sleep(wait_time)
 
-async def fetch_linkedin_profile(linkedin_url: str) -> Optional[Dict]:
-    """Fetch profile information and photo from LinkedIn URL"""
+async def fetch_linkedin_profile(url: str) -> Dict[str, Any]:
+    """Fetch profile data from LinkedIn"""
     try:
-        if api is None:
-            logger.error("LinkedIn API not initialized when trying to fetch profile")
-            return None
+        if not api:
+            logger.warning("LinkedIn API not initialized")
+            return {}
             
-        profile_id = linkedin_url.split('/in/')[-1].strip('/')
+        # Extract profile ID from URL
+        profile_id = url.split('/in/')[-1].strip('/')
         logger.info(f"Attempting to fetch profile for ID: {profile_id}")
         
+        # Fetch profile data
+        profile_data = api.get_profile(profile_id)
+        logger.info("Successfully fetched profile data")
+        
+        # Extract profile picture URL
+        profile_picture_url = None
         try:
-            # Fetch profile data with retries
-            profile_data = await retry_linkedin_api(api.get_profile, profile_id)
-            
-            if not profile_data:
-                logger.error("No profile data returned from LinkedIn API")
-                return None
-                
-            logger.info("Successfully fetched profile data")
-            
-            # Process the profile data
-            profile_info = {
-                'full_name': f"{profile_data.get('firstName', '')} {profile_data.get('lastName', '')}",
-                'headline': profile_data.get('headline', ''),
-                'location': profile_data.get('geoLocationName', ''),
-                'current_company': profile_data.get('experience', [{}])[0].get('companyName', '') if profile_data.get('experience') else '',
-                'summary': profile_data.get('summary', '')
-            }
-            
-            # Handle profile picture separately to avoid timeouts
-            try:
-                if profile_data.get('profilePicture', {}).get('displayImage'):
-                    pic_url = profile_data['profilePicture']['displayImage']
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(pic_url) as response:
-                            if response.status == 200:
-                                profile_info['profile_picture'] = BytesIO(await response.read())
-                                profile_info['profile_picture'].name = 'profile_picture.jpg'
-            except Exception as pic_error:
-                logger.warning(f"Could not fetch profile picture: {str(pic_error)}")
-            
-            return profile_info
-            
-        except Exception as api_error:
-            logger.error(f"Error fetching profile from LinkedIn API: {str(api_error)}", exc_info=True)
-            return None
-            
+            if 'profilePicture' in profile_data:
+                picture_data = profile_data['profilePicture']
+                if 'displayImage' in picture_data:
+                    profile_picture_url = picture_data['displayImage']
+                    logger.info(f"Found profile picture: {profile_picture_url}")
+        except Exception as pic_error:
+            logger.warning(f"Could not fetch profile picture: {str(pic_error)}")
+        
+        # Return structured data
+        return {
+            'full_name': profile_data.get('firstName', '') + ' ' + profile_data.get('lastName', ''),
+            'headline': profile_data.get('headline', ''),
+            'location': profile_data.get('locationName', ''),
+            'current_company': profile_data.get('companyName', ''),
+            'summary': profile_data.get('summary', ''),
+            'profile_picture_url': profile_picture_url
+        }
+        
     except Exception as e:
-        logger.error(f"Error in fetch_linkedin_profile: {str(e)}", exc_info=True)
-        return None
+        logger.error(f"Error fetching LinkedIn profile: {str(e)}")
+        return {}
 
 async def test_linkedin(update: Update, context: CallbackContext) -> None:
     """Admin command to test LinkedIn API connection"""
@@ -829,8 +863,7 @@ async def export_profiles(update: Update, context: CallbackContext) -> None:
 
 def is_valid_linkedin_url(url: str) -> bool:
     """Validate LinkedIn URL format"""
-    import re
-    linkedin_pattern = r'^https?:\/\/([\w]+\.)?linkedin\.com\/in\/[A-z0-9_-]+\/?$'
+    linkedin_pattern = r'^https?:\/\/(www\.)?linkedin\.com\/in\/[\w\-\_\%]+\/?$'
     return bool(re.match(linkedin_pattern, url))
 
 CONNECT_TIMEOUT = 30.0  # seconds
@@ -854,12 +887,12 @@ async def show_user_list(update: Update, context: CallbackContext, page: int = 0
         user_id = update.message.from_user.id
         
         with engine.connect() as conn:
-            # Get total count
+            # Get total count and users
             total_count = conn.execute(
                 select(func.count()).select_from(linkedin_table)
             ).scalar()
             
-            # Get paginated users
+            # Get paginated users with all profile information
             query = select(linkedin_table).order_by(
                 linkedin_table.c.created_at.desc()
             ).offset(page * USERS_PER_PAGE).limit(USERS_PER_PAGE)
@@ -879,39 +912,65 @@ async def show_user_list(update: Update, context: CallbackContext, page: int = 0
                     reply_markup=await get_main_keyboard()
                 )
             return
-        
-        # Create user list message
-        message = "👥 *Registered Users*\n\n"
+
+        # Send profiles one by one
         for user in users:
-            message += (
-                f"👤 *{user.full_name or 'Name not available'}*\n"
-                f"{'✨ ' + user.headline + chr(10) if user.headline else ''}"
-                f"{'🏢 ' + user.current_company + chr(10) if user.current_company else ''}"
-                f"{'📍 ' + user.location + chr(10) if user.location else ''}"
-                f"🔗 [View Profile]({user.linkedin_url})\n"
-                f"{'━' * 20}\n\n"
-            )
-        
-        # Add pagination info
+            try:
+                # Create profile card
+                profile_text = (
+                    f"👤 *{user.full_name or 'Name not available'}*" + "\n" +
+                    (f"✨ {user.headline}" + "\n" if hasattr(user, 'headline') and user.headline else "") +
+                    (f"🏢 {user.current_company}" + "\n" if hasattr(user, 'current_company') and user.current_company else "") +
+                    (f"📍 {user.location}" + "\n" if hasattr(user, 'location') and user.location else "") +
+                    (f"📝 {user.summary}" + "\n\n" if hasattr(user, 'summary') and user.summary else "\n") +
+                    f"🔗 [View Full Profile]({user.linkedin_url})" + "\n" +
+                    ("━" * 30)
+                )
+
+                # Only try to access profile_picture_url if it exists
+                if hasattr(user, 'profile_picture_url') and user.profile_picture_url:
+                    try:
+                        await update.message.reply_photo(
+                            photo=user.profile_picture_url,
+                            caption=profile_text,
+                            parse_mode='Markdown'
+                        )
+                    except Exception as photo_error:
+                        logger.error(f"Error sending photo: {str(photo_error)}")
+                        await update.message.reply_text(
+                            profile_text,
+                            parse_mode='Markdown',
+                            disable_web_page_preview=True
+                        )
+                else:
+                    await update.message.reply_text(
+                        profile_text,
+                        parse_mode='Markdown',
+                        disable_web_page_preview=True
+                    )
+
+            except Exception as e:
+                logger.error(f"Error sending profile: {str(e)}")
+                continue
+
+        # Add pagination controls
         total_pages = (total_count + USERS_PER_PAGE - 1) // USERS_PER_PAGE
-        message += f"\nPage {page + 1} of {total_pages}"
         
-        # Create inline keyboard for pagination
-        keyboard = []
-        if page > 0:
-            keyboard.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"users_page_{page-1}"))
-        if (page + 1) * USERS_PER_PAGE < total_count:
-            keyboard.append(InlineKeyboardButton("Next ➡️", callback_data=f"users_page_{page+1}"))
-        
-        reply_markup = InlineKeyboardMarkup([keyboard]) if keyboard else None
-        
-        await update.message.reply_text(
-            message,
-            parse_mode='Markdown',
-            disable_web_page_preview=True,
-            reply_markup=reply_markup
-        )
-        
+        # Only show pagination if there are multiple pages
+        if total_pages > 1:
+            keyboard = []
+            if page > 0:
+                keyboard.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"users_page_{page-1}"))
+            if (page + 1) * USERS_PER_PAGE < total_count:
+                keyboard.append(InlineKeyboardButton("Next ➡️", callback_data=f"users_page_{page+1}"))
+            
+            if keyboard:  # Only show pagination controls if there are buttons to show
+                pagination_text = f"\nPage {page + 1} of {total_pages}"
+                await update.message.reply_text(
+                    pagination_text,
+                    reply_markup=InlineKeyboardMarkup([keyboard])
+                )
+
     except Exception as e:
         logger.error(f"Error showing user list: {str(e)}", exc_info=True)
         await update.message.reply_text(
@@ -927,7 +986,9 @@ async def button_callback(update: Update, context: CallbackContext) -> None:
     try:
         if query.data.startswith("users_page_"):
             page = int(query.data.split("_")[-1])
-            await show_user_list(update, context, page)
+            # Create a new update object with the message
+            new_update = Update(update.update_id, message=query.message)
+            await show_user_list(new_update, context, page)
             
     except Exception as e:
         logger.error(f"Error in button callback: {str(e)}", exc_info=True)
