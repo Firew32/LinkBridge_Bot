@@ -8,17 +8,9 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.8.0
+      - key: DATABASE_URL
+        value: postgresql://is_connection_db_user:TumvNy5ZuP7Jl6oYPF2YGbGyC5KHlaYw@dpg-cu61krlds78s73aggn30-a/is_connection_db
       - key: TELEGRAM_BOT_TOKEN
-        sync: false
-      - key: DB_HOST
-        sync: false
-      - key: DB_PORT
-        sync: false
-      - key: DB_NAME
-        sync: false
-      - key: DB_USER
-        sync: false
-      - key: DB_PASSWORD
         sync: false
       - key: LINKEDIN_USERNAME
         sync: false
