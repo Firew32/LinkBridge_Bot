@@ -25,6 +25,9 @@ import time
 import telegram.error
 import platform
 import re
+import sys
+from contextlib import contextmanager
+import fcntl
 
 
 
@@ -1009,75 +1012,90 @@ async def button_callback(update: Update, context: CallbackContext) -> None:
             reply_markup=await get_main_keyboard()
         )
 
+@contextmanager
+def file_lock():
+    """Ensure only one instance of the bot is running"""
+    lock_file = open("bot.lock", "w")
+    try:
+        fcntl.lockf(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+    except IOError:
+        logger.error("Another instance of the bot is already running")
+        sys.exit(1)
+    finally:
+        fcntl.lockf(lock_file, fcntl.LOCK_UN)
+        lock_file.close()
+
 def main():
     logger.info("Starting bot...")
     max_retries = 3
     retry_delay = 5  # seconds
     
-    while True:  # Keep the bot running indefinitely
-        try:
-            # Reset event loop
-            reset_event_loop()
-            
-            # Create new application instance
-            application = (
-                Application.builder()
-                .token(TELEGRAM_BOT_TOKEN)
-                .connect_timeout(CONNECT_TIMEOUT)
-                .read_timeout(READ_TIMEOUT)
-                .get_updates_connect_timeout(CONNECT_TIMEOUT)
-                .get_updates_read_timeout(READ_TIMEOUT)
-                .build()
-            )
-            
-            # Add handlers
-            logger.info("Setting up command handlers...")
-            application.add_handler(CommandHandler("start", start))
-            application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-            application.add_handler(CommandHandler("delete", delete_profile))
-            application.add_handler(CommandHandler("update", update_profile))
-            application.add_handler(CommandHandler("help", help_command))
-            application.add_handler(CommandHandler("test_linkedin", test_linkedin))
-            application.add_handler(CommandHandler("status", status))
-            application.add_handler(CommandHandler("search", search_profiles))
-            application.add_handler(CommandHandler("stats", profile_stats))
-            application.add_handler(CommandHandler("export", export_profiles))
-            application.add_handler(CallbackQueryHandler(button_callback))
-            application.add_error_handler(error_handler)
-            
-            logger.info("Bot is ready to start polling")
-            
-            # Run the bot with proper shutdown handling
-            application.run_polling(
-                allowed_updates=Update.ALL_TYPES,
-                drop_pending_updates=True,
-                close_loop=False
-            )
-            
-        except telegram.error.NetworkError as e:
-            logger.error(f"Network error occurred: {str(e)}")
-            time.sleep(retry_delay)
-            continue
-            
-        except telegram.error.TimedOut:
-            logger.warning(f"Connection timed out. Retrying in {retry_delay} seconds...")
-            time.sleep(retry_delay)
-            continue
-            
-        except Exception as e:
-            logger.error("Failed to start bot:", exc_info=True)
-            time.sleep(retry_delay)
-            continue
-        
-        finally:
-            # Clean up
+    with file_lock():  # Add this line
+        while True:  # Keep the bot running indefinitely
             try:
-                loop = asyncio.get_event_loop()
-                if not loop.is_closed():
-                    loop.run_until_complete(application.shutdown())
-                    loop.close()
+                # Reset event loop
+                reset_event_loop()
+                
+                # Create new application instance
+                application = (
+                    Application.builder()
+                    .token(TELEGRAM_BOT_TOKEN)
+                    .connect_timeout(CONNECT_TIMEOUT)
+                    .read_timeout(READ_TIMEOUT)
+                    .get_updates_connect_timeout(CONNECT_TIMEOUT)
+                    .get_updates_read_timeout(READ_TIMEOUT)
+                    .build()
+                )
+                
+                # Add handlers
+                logger.info("Setting up command handlers...")
+                application.add_handler(CommandHandler("start", start))
+                application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+                application.add_handler(CommandHandler("delete", delete_profile))
+                application.add_handler(CommandHandler("update", update_profile))
+                application.add_handler(CommandHandler("help", help_command))
+                application.add_handler(CommandHandler("test_linkedin", test_linkedin))
+                application.add_handler(CommandHandler("status", status))
+                application.add_handler(CommandHandler("search", search_profiles))
+                application.add_handler(CommandHandler("stats", profile_stats))
+                application.add_handler(CommandHandler("export", export_profiles))
+                application.add_handler(CallbackQueryHandler(button_callback))
+                application.add_error_handler(error_handler)
+                
+                logger.info("Bot is ready to start polling")
+                
+                # Run the bot with proper shutdown handling
+                application.run_polling(
+                    allowed_updates=Update.ALL_TYPES,
+                    drop_pending_updates=True,  # Add this line
+                    close_loop=False
+                )
+                
+            except telegram.error.NetworkError as e:
+                logger.error(f"Network error occurred: {str(e)}")
+                time.sleep(retry_delay)
+                continue
+                
+            except telegram.error.TimedOut:
+                logger.warning(f"Connection timed out. Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+                continue
+                
             except Exception as e:
-                logger.error(f"Error during cleanup: {str(e)}")
+                logger.error("Failed to start bot:", exc_info=True)
+                time.sleep(retry_delay)
+                continue
+            
+            finally:
+                # Clean up
+                try:
+                    loop = asyncio.get_event_loop()
+                    if not loop.is_closed():
+                        loop.run_until_complete(application.shutdown())
+                        loop.close()
+                except Exception as e:
+                    logger.error(f"Error during cleanup: {str(e)}")
 
 if __name__ == '__main__':
     try:

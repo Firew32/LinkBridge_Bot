@@ -163,3 +163,5 @@ cython_debug/
 #.idea/
 
 logs/*.log
+
+bot.lock
