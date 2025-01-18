@@ -1028,7 +1028,11 @@ def main():
                 allowed_updates=Update.ALL_TYPES,
                 drop_pending_updates=True,
                 close_loop=False,
-                stop_signals=None  # Disable signal handling
+                stop_signals=None,  # Disable signal handling
+                read_timeout=30,    # Add timeout values
+                write_timeout=30,
+                connect_timeout=30,
+                pool_timeout=30
             )
             
         except telegram.error.NetworkError as e:
@@ -1044,6 +1048,11 @@ def main():
         except telegram.error.Conflict as e:
             logger.error(f"Conflict error: {str(e)}")
             time.sleep(retry_delay * 2)  # Wait longer for conflicts
+            # Try to clean up any existing sessions
+            try:
+                application.stop()
+            except:
+                pass
             continue
             
         except Exception as e:
