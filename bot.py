@@ -99,32 +99,30 @@ linkedin_table = Table(
 # Add LinkedIn API initialization
 try:
     logger.info("Initializing LinkedIn API...")
-    LINKEDIN_USERNAME = os.getenv('LINKEDIN_USERNAME')
-    LINKEDIN_PASSWORD = os.getenv('LINKEDIN_PASSWORD')
+    linkedin_username = os.getenv('LINKEDIN_USERNAME')
+    linkedin_password = os.getenv('LINKEDIN_PASSWORD')
     
-    if not all([LINKEDIN_USERNAME, LINKEDIN_PASSWORD]):
-        logger.warning("LinkedIn credentials not found - bot will run without LinkedIn API features")
+    if not linkedin_username or not linkedin_password:
+        logger.warning("LinkedIn credentials not found in environment variables")
         api = None
     else:
         try:
-            # Initialize API with basic authentication (removed unsupported parameters)
-            api = Linkedin(
-                LINKEDIN_USERNAME,
-                LINKEDIN_PASSWORD
-            )
-            # Test the connection with a simple operation
-            logger.info("Testing LinkedIn connection...")
-            try:
-                # Use a simpler test that's less likely to trigger security
-                me = api.get_profile()
-                if me:
+            # Add retry mechanism for LinkedIn API initialization
+            max_retries = 3
+            retry_delay = 5
+            
+            for attempt in range(max_retries):
+                try:
+                    api = Linkedin(linkedin_username, linkedin_password)
                     logger.info("LinkedIn API initialized successfully")
-                else:
-                    raise Exception("Could not verify LinkedIn connection")
-            except Exception as test_error:
-                logger.error(f"LinkedIn API test failed: {str(test_error)}")
-                api = None
-                
+                    break
+                except Exception as retry_error:
+                    if attempt == max_retries - 1:
+                        raise
+                    logger.warning(f"LinkedIn API initialization attempt {attempt + 1} failed, retrying in {retry_delay}s")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    
         except Exception as api_error:
             if "CHALLENGE" in str(api_error):
                 logger.warning("""
@@ -139,7 +137,7 @@ try:
             else:
                 logger.error(f"LinkedIn API initialization failed: {str(api_error)}", exc_info=True)
             api = None
-
+            
 except Exception as e:
     logger.error(f"Failed to initialize LinkedIn API: {str(e)}", exc_info=True)
     api = None
@@ -627,8 +625,17 @@ async def fetch_linkedin_profile(url: str) -> Dict[str, Any]:
     """Fetch profile data from LinkedIn"""
     try:
         if not api:
-            logger.warning("LinkedIn API not initialized")
-            return {}
+            logger.warning("LinkedIn API not initialized, storing basic profile info")
+            # Return basic profile info without API data
+            return {
+                'linkedin_url': url,
+                'full_name': 'Profile Owner',  # Default name
+                'headline': '',
+                'location': '',
+                'current_company': '',
+                'summary': '',
+                'profile_picture_url': None
+            }
             
         # Extract profile ID from URL
         profile_id = url.split('/in/')[-1].strip('/')
